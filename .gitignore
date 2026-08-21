@@ -1,0 +1,35 @@
+# Credenciales y variables locales
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Logs
+*.log
+logs/
+
+# Sesiones y archivos temporales
+tmp/
+temp/
+sessions/
+cache/
+
+# Backups
+backups/
+*.bak
+*.backup
+*.sql.gz
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Git anidado
+.git/
