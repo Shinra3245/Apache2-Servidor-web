@@ -35,5 +35,12 @@ Thumbs.db
 
 # Git anidado
 .git/
+
+# Documentación y evidencias de la práctica (solo locales)
 *.pdf
+*.doc
 *.docx
+/README_V2.md
+/postman/README.md
+/evidencias/
+/tools/generate*_report.py
