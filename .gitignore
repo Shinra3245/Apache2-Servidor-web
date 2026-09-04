@@ -34,3 +34,4 @@ Thumbs.db
 # Git anidado
 .git/
 *.pdf
+*.docx
