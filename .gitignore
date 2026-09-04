@@ -21,6 +21,7 @@ backups/
 *.bak
 *.backup
 *.sql.gz
+*.zip
 
 # IDE / editor
 .vscode/
