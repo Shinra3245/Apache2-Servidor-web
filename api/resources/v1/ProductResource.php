@@ -1,17 +1,16 @@
 <?php
 
-require_once '../config/database.php';
-require_once '../models/Product.php';
+require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../models/Product.php';
 
 class ProductResource
 {
     private $db;
     private $product;
 
-    public function __construct()
+    public function __construct(?PDO $db = null)
     {
-        $database = new Database();
-        $this->db = $database->getConnection();
+        $this->db = $db ?? (new Database())->getConnection();
         $this->product = new Product($this->db);
     }
 

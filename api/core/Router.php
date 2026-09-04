@@ -1,4 +1,7 @@
 <?php
+
+require_once __DIR__ . '/JsonResponse.php';
+
 class Router
 {
     private $routes = [];
@@ -11,12 +14,13 @@ class Router
         $this->basePath = rtrim($basePath, '/');
     }
 
-    public function addRoute($method, $path, $handler)
+    public function addRoute($method, $path, $handler, $middleware = null)
     {
         $this->routes[] = [
             'method' => strtoupper($method),
             'path' => "/api/{$this->version}" . $path,
-            'handler' => $handler
+            'handler' => $handler,
+            'middleware' => $middleware
         ];
     }
 
@@ -38,12 +42,18 @@ class Router
 
             if ($route['method'] === $method && preg_match($pattern, $uri, $matches)) {
                 array_shift($matches);
+
+                if (is_callable($route['middleware'])) {
+                    call_user_func($route['middleware']);
+                }
+
                 return call_user_func_array($route['handler'], $matches);
             }
         }
 
-        http_response_code(404);
-        echo json_encode(['message' => 'Ruta no encontrada', 'uri' => $uri]);
+        JsonResponse::send(404, [
+            'message' => 'Ruta no encontrada',
+            'uri' => $uri
+        ]);
     }
 }
-?>

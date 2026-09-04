@@ -1,107 +1,122 @@
 <?php
+
 class User
 {
-    private $conn;
-    private $table_name = "users";
+    private string $tableName = 'api_users';
 
-    public $id;
-    public $name;
-    public $email;
-    public $created_at;
+    public int $id;
+    public string $username;
+    public string $email;
+    public string $passwordHash;
+    public string $status = 'ACTIVE';
+    public string $createdAt;
+    public string $updatedAt;
 
-    public function __construct($db)
+    public function __construct(private PDO $conn)
     {
-        $this->conn = $db;
     }
 
-    public function create()
+    public function findActiveByUsername(string $username): ?array
     {
-        $query = "INSERT INTO " . $this->table_name . " 
-                  SET name=:name, email=:email, created_at=:created_at";
+        $query = "SELECT id, username, email, password_hash, status, created_at, updated_at
+                  FROM {$this->tableName}
+                  WHERE username = :username
+                    AND status = 'ACTIVE'
+                  LIMIT 1";
 
         $stmt = $this->conn->prepare($query);
+        $stmt->execute([':username' => trim($username)]);
 
-        $this->name = htmlspecialchars(strip_tags($this->name));
-        $this->email = htmlspecialchars(strip_tags($this->email));
-        $this->created_at = date('Y-m-d H:i:s');
+        $user = $stmt->fetch();
 
-        $stmt->bindParam(":name", $this->name);
-        $stmt->bindParam(":email", $this->email);
-        $stmt->bindParam(":created_at", $this->created_at);
-
-        if ($stmt->execute()) {
-            $this->id = $this->conn->lastInsertId();
-            return true;
-        }
-        return false;
+        return $user ?: null;
     }
 
-    public function read()
+    public function read(): PDOStatement
     {
-        $query = "SELECT id, name, email, created_at 
-                  FROM " . $this->table_name . " 
+        $query = "SELECT id, username, email, status, created_at, updated_at
+                  FROM {$this->tableName}
                   ORDER BY created_at DESC";
 
         $stmt = $this->conn->prepare($query);
         $stmt->execute();
+
         return $stmt;
     }
 
-    public function readOne()
+    public function readOne(): ?array
     {
-        $query = "SELECT id, name, email, created_at 
-                  FROM " . $this->table_name . " 
-                  WHERE id = :id 
+        $query = "SELECT id, username, email, status, created_at, updated_at
+                  FROM {$this->tableName}
+                  WHERE id = :id
                   LIMIT 1";
 
         $stmt = $this->conn->prepare($query);
-        $stmt->bindParam(":id", $this->id);
-        $stmt->execute();
+        $stmt->execute([':id' => $this->id]);
 
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        $user = $stmt->fetch();
 
-        if ($row) {
-            $this->name = $row['name'];
-            $this->email = $row['email'];
-            $this->created_at = $row['created_at'];
-            return true;
-        }
-        return false;
+        return $user ?: null;
     }
 
-    public function update()
+    public function create(): bool
     {
-        $query = "UPDATE " . $this->table_name . " 
-                  SET name = :name, email = :email 
+        $query = "INSERT INTO {$this->tableName}
+                    (username, email, password_hash, status)
+                  VALUES
+                    (:username, :email, :password_hash, :status)";
+
+        $stmt = $this->conn->prepare($query);
+        $result = $stmt->execute([
+            ':username' => trim($this->username),
+            ':email' => trim($this->email),
+            ':password_hash' => $this->passwordHash,
+            ':status' => $this->status
+        ]);
+
+        if ($result) {
+            $this->id = (int) $this->conn->lastInsertId();
+        }
+
+        return $result;
+    }
+
+    public function update(bool $replacePassword): bool
+    {
+        $passwordClause = $replacePassword
+            ? ', password_hash = :password_hash'
+            : '';
+
+        $query = "UPDATE {$this->tableName}
+                  SET username = :username,
+                      email = :email,
+                      status = :status
+                      {$passwordClause}
                   WHERE id = :id";
 
+        $parameters = [
+            ':username' => trim($this->username),
+            ':email' => trim($this->email),
+            ':status' => $this->status,
+            ':id' => $this->id
+        ];
+
+        if ($replacePassword) {
+            $parameters[':password_hash'] = $this->passwordHash;
+        }
+
         $stmt = $this->conn->prepare($query);
 
-        $this->name = htmlspecialchars(strip_tags($this->name));
-        $this->email = htmlspecialchars(strip_tags($this->email));
-        $this->id = htmlspecialchars(strip_tags($this->id));
-
-        $stmt->bindParam(':name', $this->name);
-        $stmt->bindParam(':email', $this->email);
-        $stmt->bindParam(':id', $this->id);
-
-        if ($stmt->execute()) {
-            return true;
-        }
-        return false;
+        return $stmt->execute($parameters);
     }
-    public function delete()
+
+    public function delete(): bool
     {
-        $query = "DELETE FROM " . $this->table_name . " WHERE id = :id";
+        $stmt = $this->conn->prepare(
+            "DELETE FROM {$this->tableName} WHERE id = :id"
+        );
+        $stmt->execute([':id' => $this->id]);
 
-        $stmt = $this->conn->prepare($query);
-        $this->id = htmlspecialchars(strip_tags($this->id));
-        $stmt->bindParam(':id', $this->id);
-
-        if ($stmt->execute()) {
-            return true;
-        }
-        return false;
+        return $stmt->rowCount() === 1;
     }
 }
-?>

@@ -1,141 +1,202 @@
 <?php
 
-require_once '../config/database.php';
-require_once '../models/User.php';
+require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../core/JsonResponse.php';
+require_once __DIR__ . '/../../models/User.php';
 
 class UserResource
 {
-    private $db;
-    private $user;
+    private User $user;
 
-    public function __construct()
+    public function __construct(?PDO $db = null)
     {
-        $database = new Database();
-        $this->db = $database->getConnection();
-        $this->user = new User($this->db);
+        $db ??= (new Database())->getConnection();
+        $this->user = new User($db);
     }
 
-    // GET /api/v1/users
-    public function index()
+    public function index(): void
     {
-        header("Content-Type: application/json");
-
         $stmt = $this->user->read();
-        $num = $stmt->rowCount();
 
-        if ($num > 0) {
-            $users_arr = array();
-            $users_arr["records"] = array();
+        JsonResponse::send(200, [
+            'records' => $stmt->fetchAll()
+        ]);
+    }
 
-            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                extract($row);
-                $user_item = array(
-                    "id" => $id,
-                    "name" => $name,
-                    "email" => $email,
-                    "created_at" => $created_at
-                );
-                array_push($users_arr["records"], $user_item);
+    public function show(string $id): void
+    {
+        if (!$this->validId($id)) {
+            JsonResponse::send(400, ['message' => 'ID de usuario no válido']);
+            return;
+        }
+
+        $this->user->id = (int) $id;
+        $user = $this->user->readOne();
+
+        if ($user === null) {
+            JsonResponse::send(404, ['message' => 'Usuario no encontrado']);
+            return;
+        }
+
+        JsonResponse::send(200, $user);
+    }
+
+    public function store(): void
+    {
+        $data = $this->jsonBody();
+        $errors = $this->validate($data, true);
+
+        if ($errors !== []) {
+            JsonResponse::send(400, [
+                'message' => 'Datos inválidos',
+                'errors' => $errors
+            ]);
+            return;
+        }
+
+        $this->user->username = trim($data['username']);
+        $this->user->email = trim($data['email']);
+        $this->user->passwordHash = password_hash(
+            $data['password'],
+            PASSWORD_DEFAULT
+        );
+        $this->user->status = $data['status'] ?? 'ACTIVE';
+
+        try {
+            $this->user->create();
+
+            JsonResponse::send(201, [
+                'message' => 'Usuario creado exitosamente',
+                'id' => $this->user->id
+            ]);
+        } catch (PDOException $e) {
+            if ($e->getCode() === '23000') {
+                JsonResponse::send(409, [
+                    'message' => 'El username o email ya está registrado'
+                ]);
+                return;
             }
 
-            http_response_code(200);
-            echo json_encode($users_arr);
-        } else {
-            http_response_code(200);
-            echo json_encode(array("records" => array()));
+            throw $e;
         }
     }
 
-    // GET /api/v1/users/{id}
-    public function show($id)
+    public function update(string $id): void
     {
-        header("Content-Type: application/json");
+        if (!$this->validId($id)) {
+            JsonResponse::send(400, ['message' => 'ID de usuario no válido']);
+            return;
+        }
 
-        $this->user->id = $id;
+        $this->user->id = (int) $id;
 
-        if ($this->user->readOne()) {
-            $user_arr = array(
-                "id" => $this->user->id,
-                "name" => $this->user->name,
-                "email" => $this->user->email,
-                "created_at" => $this->user->created_at
+        if ($this->user->readOne() === null) {
+            JsonResponse::send(404, ['message' => 'Usuario no encontrado']);
+            return;
+        }
+
+        $data = $this->jsonBody();
+        $replacePassword = isset($data['password']) && $data['password'] !== '';
+        $errors = $this->validate($data, $replacePassword);
+
+        if ($errors !== []) {
+            JsonResponse::send(400, [
+                'message' => 'Datos inválidos',
+                'errors' => $errors
+            ]);
+            return;
+        }
+
+        $this->user->username = trim($data['username']);
+        $this->user->email = trim($data['email']);
+        $this->user->status = $data['status'] ?? 'ACTIVE';
+
+        if ($replacePassword) {
+            $this->user->passwordHash = password_hash(
+                $data['password'],
+                PASSWORD_DEFAULT
             );
-
-            http_response_code(200);
-            echo json_encode($user_arr);
-        } else {
-            http_response_code(404);
-            echo json_encode(array("message" => "Usuario no encontrado"));
         }
-    }
 
-    // POST /api/v1/users
-    public function store()
-    {
-        header("Content-Type: application/json");
-
-        $data = json_decode(file_get_contents("php://input"));
-
-        if (!empty($data->name) && !empty($data->email)) {
-            $this->user->name = $data->name;
-            $this->user->email = $data->email;
-
-            if ($this->user->create()) {
-                http_response_code(201);
-                echo json_encode(array(
-                    "message" => "Usuario creado exitosamente",
-                    "id" => $this->user->id
-                ));
-            } else {
-                http_response_code(503);
-                echo json_encode(array("message" => "No se pudo crear el usuario"));
+        try {
+            $this->user->update($replacePassword);
+            JsonResponse::send(200, [
+                'message' => 'Usuario actualizado exitosamente'
+            ]);
+        } catch (PDOException $e) {
+            if ($e->getCode() === '23000') {
+                JsonResponse::send(409, [
+                    'message' => 'El username o email ya está registrado'
+                ]);
+                return;
             }
-        } else {
-            http_response_code(400);
-            echo json_encode(array("message" => "Datos incompletos"));
+
+            throw $e;
         }
     }
 
-    // PUT /api/v1/users/{id}
-    public function update($id)
+    public function destroy(string $id): void
     {
-        header("Content-Type: application/json");
-
-        $data = json_decode(file_get_contents("php://input"));
-
-        $this->user->id = $id;
-
-        if (!empty($data->name) && !empty($data->email)) {
-            $this->user->name = $data->name;
-            $this->user->email = $data->email;
-
-            if ($this->user->update()) {
-                http_response_code(200);
-                echo json_encode(array("message" => "Usuario actualizado exitosamente"));
-            } else {
-                http_response_code(503);
-                echo json_encode(array("message" => "No se pudo actualizar el usuario"));
-            }
-        } else {
-            http_response_code(400);
-            echo json_encode(array("message" => "Datos incompletos"));
+        if (!$this->validId($id)) {
+            JsonResponse::send(400, ['message' => 'ID de usuario no válido']);
+            return;
         }
+
+        $this->user->id = (int) $id;
+
+        if (!$this->user->delete()) {
+            JsonResponse::send(404, ['message' => 'Usuario no encontrado']);
+            return;
+        }
+
+        JsonResponse::send(200, [
+            'message' => 'Usuario eliminado exitosamente'
+        ]);
     }
 
-    // DELETE /api/v1/users/{id}
-    public function destroy($id)
+    private function jsonBody(): array
     {
-        header("Content-Type: application/json");
+        $data = json_decode(file_get_contents('php://input'), true);
 
-        $this->user->id = $id;
-
-        if ($this->user->delete()) {
-            http_response_code(200);
-            echo json_encode(array("message" => "Usuario eliminado exitosamente"));
-        } else {
-            http_response_code(503);
-            echo json_encode(array("message" => "No se pudo eliminar el usuario"));
+        if (!is_array($data)) {
+            JsonResponse::send(400, [
+                'message' => 'El cuerpo debe contener JSON válido'
+            ]);
+            exit;
         }
+
+        return $data;
+    }
+
+    private function validate(array $data, bool $passwordRequired): array
+    {
+        $errors = [];
+        $username = trim((string) ($data['username'] ?? ''));
+        $email = trim((string) ($data['email'] ?? ''));
+        $password = (string) ($data['password'] ?? '');
+        $status = $data['status'] ?? 'ACTIVE';
+
+        if ($username === '' || mb_strlen($username) > 100) {
+            $errors[] = 'Username obligatorio con máximo 100 caracteres';
+        }
+
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL) || mb_strlen($email) > 150) {
+            $errors[] = 'Email no válido';
+        }
+
+        if ($passwordRequired && mb_strlen($password) < 8) {
+            $errors[] = 'La contraseña debe tener al menos 8 caracteres';
+        }
+
+        if (!in_array($status, ['ACTIVE', 'INACTIVE'], true)) {
+            $errors[] = 'Status debe ser ACTIVE o INACTIVE';
+        }
+
+        return $errors;
+    }
+
+    private function validId(string $id): bool
+    {
+        return ctype_digit($id) && (int) $id > 0;
     }
 }
-?>
